@@ -1,0 +1,25 @@
+CLIENTE:
+	main()
+	run_client(client_sock, client_id)
+	validate_response(client_sock, response)
+	decrypt(cipherkey, data)
+	encrypt(cipherkey, data)
+	verify_password(client_sock, client_id, password)
+	check_client_id(client_sock, client_id)
+
+	USAGE : client.py client_id
+
+SERVER:
+	main()
+	check_id (request)
+	check_existence_json()
+	read_json (file_name)
+	write_json (file_name, data)
+	check_password (request)
+	new_client(client_sock, request)
+	new_msg(client_sock)
+	decrypt(client_id, data)
+	encrypt(client_id, data)
+	find_client_id(client_sock)
+
+	USAGE : client.py porto [maquina IPv4]
