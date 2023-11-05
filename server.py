@@ -5,15 +5,14 @@ from distutils.command.clean import clean
 from email import message
 from http import client
 from pickle import TRUE
+import random
 import sys
 import socket
 import select
-import signal
 import os
 import json
 import base64
 import csv
-import random
 from typing import KeysView
 from unittest import case
 from common_comm import send_dict, recv_dict, sendrecv_dict
@@ -54,11 +53,8 @@ def check_existence_json(token):
 		write_json("users.json", {})
 	if not os.path.exists(directory+"/admin_token.json"):
 		write_json("admin_token.json", [token])
-	if not os.path.exists(directory+"/total_data_bytes.json"):
-		write_json("total_data_bytes.json", [0])
 	else:
 		write_json("admin_token.json", [token])
-		write_json("total_data_bytes.json", [0])
 	return None
 
 def check_existence_sockets_json():
@@ -85,6 +81,24 @@ def find_client_id (sock):
 	return ("No such key")
 
 
+# Função para encriptar valores a enviar em formato json com codificação base64
+# return int data encrypted in a 16 bytes binary string and coded base64
+def encrypt (client_id, data):
+	cipherkey = read_json("users.json")[client_id]["cipher"]
+	cipher = AES.new(cipherkey.encode("utf-8" if os.name == 'nt' else "latin-1"), AES.MODE_ECB)
+	data_encrypted = cipher.encrypt( bytes("%16s" % data, "utf-8" if os.name == 'nt' else "latin-1").ljust(1024) )
+	data_encoded = str(base64.b64encode(data_encrypted), "utf-8" if os.name == 'nt' else "latin-1")
+	return data_encoded
+
+
+# Função para desencriptar valores recebidos em formato json com codificação base64
+# return int data decrypted from a 16 bytes binary string and coded base64
+def decrypt (client_id, data):
+	cipherkey = read_json("users.json")[client_id]["cipher"]
+	cipher = AES.new(cipherkey.encode("utf-8" if os.name == 'nt' else "latin-1"), AES.MODE_ECB)
+	data_decoder = base64.b64decode(data)
+	data_decrypt = cipher.decrypt(data_decoder)
+	return str(data_decrypt, "utf-8" if os.name == 'nt' else "latin-1")
 
 
 # Incomming message structure: //o que mandamos ao servidor
@@ -139,17 +153,18 @@ def write_csv(filename, data):
 def talk(request):
 	client_id = request["client_id"]
 	message = request["message"]
-	message_decoded = message.strip()
+	message_decoded = decrypt(client_id, message).strip()
 	print(message_decoded)
 	if message_decoded != "":
-		total_data_bytes = read_json("total_data_bytes.json")[0]
-		total_data_bytes += len(message_decoded)
-		write_csv("data.csv", [datetime.today().strftime('%Y-%m-%d %H:%M:%S'),client_id, message_decoded, len(message_decoded), total_data_bytes])
-		write_json("total_data_bytes.json", [total_data_bytes])
-	else:
-		total_data_bytes = read_json("total_data_bytes.json")[0]
+		write_csv("data.csv", [datetime.today().strftime('%Y-%m-%d %H:%M:%S'),client_id, message_decoded])
 	lst = open_csv("data.csv")
-	dic = { "op": "TALK", "status": True, "message": lst, "data_bytes": len(message_decoded), "total_data_bytes": total_data_bytes }
+	for element in lst:
+		if element == []:
+			break
+		else:
+			mensagem_encriptada = encrypt(element[1], element[2])
+			element[2] = mensagem_encriptada
+	dic = { "op": "TALK", "status": True, "message": lst}
 	return dic
 
 def check_active(clien_id):
@@ -206,13 +221,6 @@ def start (client_sock, request):
 		dic = { "op": "START", "status": False, "error": "Cliente inexistente" }
 	return dic
 
-def find_client_id(client_sock):
-	usuarios = read_json("users.json")
-	for user in usuarios:
-		if usuarios[user]["socket"] == str(client_sock):
-			return user
-	return None
-
 def new_msg (client_sock):
 	msg = recv_dict(client_sock)
 	answer = "NO ANSWER"
@@ -235,8 +243,6 @@ def new_msg (client_sock):
 		answer = start(client_sock, msg)
 	elif msg["op"]=="GET_ACTIVE_USERS":
 		answer = get_active_users()
-	elif msg["op"]=="DEACTIVATE":
-		answer = deactivate(find_client_id(msg["client_sock"]))
 	print(RED+"Answer: ",answer,RESET)
 	print(BOLD+"-"*120+RESET)
 	return answer
@@ -293,9 +299,6 @@ def new_client (client_sock, request):
 # eliminate client from dictionary
 # return response message with result or error message
 
-def signal_handler(sig, frame):
-    sys.exit(0)
-
 
 def main():
 	# validate the number of arguments and eventually print error message and exit with error
@@ -303,14 +306,11 @@ def main():
 
 	os.system('cls' if os.name == 'nt' else 'clear')
 
-	signal.signal(signal.SIGINT, signal_handler)
 
-	port = 5005
-	ip_addr = "0.0.0.0"
+	port = 1234
 	server_socket = socket.socket (socket.AF_INET, socket.SOCK_STREAM)
-	server_socket.bind ((ip_addr, port))
-	server_socket.listen (5)
-	server_socket.setblocking(False)
+	server_socket.bind (("0.0.0.0", port))
+	server_socket.listen (10)
 
 	host_name = socket.gethostname()
 	host_ip = socket.gethostbyname(host_name)
